@@ -8,6 +8,7 @@ const socketIo = require('socket.io');
 const crashService = require('./services/crashService');
 const gameRoutes = require('./routes/gameRoutes');
 const walletRoutes = require('./routes/walletRoutes');
+const gameController = require('./controllers/gameController');
 
 const app = express();
 const server = http.createServer(app); // Create an HTTP server from the app
@@ -42,10 +43,13 @@ app.get("/", (req, res) => {
 });
 
 let activeConnections = 0;
+let currentRound = null;
+let roundInterval = null;
+const ROUND_DURATION = 10000; // 10 seconds
 
 // WebSocket handling for real-time updates
 io.on('connection', (socket) => {
-  console.log('A user connected');
+  console.log('Client connected');
   activeConnections++;
   
   // Only start round interval if database is connected
@@ -57,19 +61,59 @@ io.on('connection', (socket) => {
     console.error('Cannot start rounds - database not connected');
   }
 
-  // Notify clients about round start
-  socket.emit('roundStart', { message: 'New round started!' });
+  // Send current game state
+  if (currentRound) {
+    socket.emit('gameState', {
+      roundNumber: currentRound.roundNumber,
+      startTime: currentRound.startTime,
+      currentMultiplier: getCurrentMultiplier()
+    });
+  }
 
-  // Listen for player cashout requests
-  socket.on('cashOutRequest', (data) => {
-    console.log(`Player requested cashout: ${data}`);
-    // You can call your cashout function here and send updates to the player
-    io.emit('cashOutUpdate', { playerId: data.playerId, cryptoPayout: data.cryptoPayout });
+  socket.on('placeBet', async (data) => {
+    try {
+      const { playerId, usdAmount, currency } = data;
+      const result = await gameController.placeBet({
+        params: { playerId },
+        body: { usdAmount, currency }
+      });
+      
+      io.emit('newBet', {
+        playerId,
+        usdAmount,
+        currency,
+        roundNumber: currentRound.roundNumber
+      });
+      
+      socket.emit('betResult', result);
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  socket.on('cashOut', async (data) => {
+    try {
+      const { playerId, multiplier } = data;
+      const result = await gameController.cashOut({
+        params: { playerId },
+        body: { cashoutMultiplier: multiplier }
+      });
+      
+      io.emit('playerCashout', {
+        playerId,
+        multiplier,
+        payout: result.transaction.amountUSD
+      });
+      
+      socket.emit('cashoutResult', result);
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
   });
 
   // Listen for disconnect event
   socket.on('disconnect', () => {
-    console.log('A user disconnected');
+    console.log('Client disconnected');
     activeConnections--;
     
     // Stop the round interval if no users are connected
@@ -78,6 +122,19 @@ io.on('connection', (socket) => {
     }
   });
 });
+
+// Start the game loop
+function startGameLoop() {
+  if (roundInterval) {
+    clearInterval(roundInterval);
+  }
+  
+  roundInterval = setInterval(async () => {
+    await crashService.startNewRound(io);
+  }, ROUND_DURATION);
+}
+
+startGameLoop();
 
 // Start the server
 server.listen(PORT, () => {

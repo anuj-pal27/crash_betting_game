@@ -6,35 +6,97 @@ const priceService = require("../services/priceService");
 const mongoose = require('mongoose');
 
 exports.placeBet = async (req, res) => {
-    try{
-        const {playerId} = req.params;
-        const {usdAmount,currency} = req.body;
+    try {
+        const { playerId } = req.params;
+        const { usdAmount, currency } = req.body;
+
+        // Input validation
+        if (!usdAmount || usdAmount <= 0) {
+            return res.status(400).json({ error: "Invalid bet amount" });
+        }
+
+        if (!currency) {
+            return res.status(400).json({ error: "Currency is required" });
+        }
+
         const player = await Player.findById(playerId);
-        if(!player) return res.status(404).json({error:"Player not found"});
+        if (!player) {
+            return res.status(404).json({ error: "Player not found" });
+        }
+
+        // Get price with better error handling
         const price = await priceService.getPrice(currency);
+        console.log(`Using price for ${currency}: ${price}`);
+
+        if (!price || price <= 0) {
+            return res.status(400).json({ 
+                error: "Invalid price received",
+                currency,
+                price
+            });
+        }
 
         const cryptoAmount = usdAmount / price;
-        console.log("cryptoAmount",cryptoAmount);
-        if(!player.wallet[currency]<cryptoAmount) return res.status(400).json({error:"Insufficient funds"});
-        player.wallet[currency] -= cryptoAmount;
-        await player.save();
-        
-        const round = await crashService.addPlayerBet(playerId, usdAmount, cryptoAmount,currency);
+        console.log(`Converting ${usdAmount} USD to ${cryptoAmount} ${currency}`);
 
-        const transaction = new Transaction({
-            playerId,
-            amountUSD: usdAmount,
-            amountCrypto: cryptoAmount,
-            transactionType: "bet",
-            roundNumber: round.roundNumber,
-            multiplier: null,
-            result: null,
+        // Check if player has enough funds
+        if (!player.wallet[currency] || player.wallet[currency] < cryptoAmount) {
+            return res.status(400).json({ 
+                error: "Insufficient funds",
+                required: cryptoAmount,
+                available: player.wallet[currency] || 0,
+                currency
+            });
+        }
+
+        // Use a transaction to ensure atomic operations
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            // Deduct from player's wallet
+            player.wallet[currency] -= cryptoAmount;
+            await player.save({ session });
+
+            // Add bet to current round
+            const round = await crashService.addPlayerBet(playerId, usdAmount, cryptoAmount, currency);
+
+            // Create transaction record
+            const transaction = new Transaction({
+                playerId,
+                amountUSD: usdAmount,
+                amountCrypto: cryptoAmount,
+                currency,
+                transactionType: "bet",
+                roundNumber: round.roundNumber,
+                multiplier: null,
+                result: null
+            });
+
+            await transaction.save({ session });
+            await session.commitTransaction();
+
+            res.json({ 
+                success: true, 
+                transaction, 
+                round,
+                wallet: player.wallet,
+                priceUsed: price
+            });
+
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
+        }
+
+    } catch (error) {
+        console.error('Place bet error:', error);
+        res.status(500).json({ 
+            error: error.message,
+            type: "Internal server error"
         });
-        await transaction.save();
-
-        res.json ({success:true,transaction,round});
-    } catch(error){
-        res.status(500).json({error:error.message});
     }
 };
 

@@ -1,6 +1,5 @@
 const GameRound = require('../models/GameRound');
 const Player = require('../models/Player');
-const generateCrashPoint = require('../utils/fairCrash');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 
@@ -10,6 +9,19 @@ let roundInterval = null;
 
 // Add timeout handling for round operations
 const ROUND_TIMEOUT = 10000; // 10 seconds
+
+function generateCrashPoint(seed, roundNumber) {
+    const hash = crypto.createHash('sha256')
+        .update(`${seed}-${roundNumber}`)
+        .digest('hex');
+    
+    // Convert first 4 bytes of hash to a number between 1 and max multiplier
+    const MAX_MULTIPLIER = 100; // Maximum 100x multiplier
+    const number = parseInt(hash.slice(0, 8), 16);
+    const crashPoint = (number % (MAX_MULTIPLIER * 100)) / 100 + 1;
+    
+    return Number(crashPoint.toFixed(2));
+}
 
 async function getCurrentRound() {
     if (currentRound) return currentRound;
@@ -28,66 +40,60 @@ async function getCurrentRound() {
     return currentRound;
 }
 
-async function startNewRound(roundNumber = null) {
+async function startNewRound(io) {
     try {
-        if (!mongoose.connection.readyState === 1) {
-            console.error('MongoDB is not connected. Cannot start new round.');
-            return null;
-        }
-
-        // Add validation for crash multiplier
-        const crashMultiplier = generateCrashPoint();
-        if (crashMultiplier <= 1) {
-            console.error('Invalid crash multiplier generated:', crashMultiplier);
-            return null;
-        }
-
-        // Add validation for round number
-        if (!roundNumber) {
-            const lastRound = await GameRound.findOne().sort({ roundNumber: -1 });
-            roundNumber = lastRound ? lastRound.roundNumber + 1 : 1;
-        }
+        const roundNumber = currentRound ? currentRound.roundNumber + 1 : 1;
+        const serverSeed = crypto.randomBytes(32).toString('hex');
+        const crashMultiplier = generateCrashPoint(serverSeed, roundNumber);
 
         currentRound = new GameRound({
             roundNumber,
             crashMultiplier,
-            serverSeed: crypto.randomBytes(32).toString('hex'),
+            serverSeed,
             startTime: new Date(),
-            bets: [],
+            bets: []
         });
 
         await currentRound.save();
 
-        // Use Promise.race with timeout
-        if (roundInterval) clearInterval(roundInterval);
-        roundInterval = setTimeout(async () => {
-            try {
-                await endRound();
-                await startNewRound();
-            } catch (error) {
-                console.error('Error in round interval:', error);
-            }
-        }, ROUND_TIMEOUT);
+        // Notify all clients about new round
+        io.emit('roundStart', {
+            roundNumber,
+            startTime: currentRound.startTime
+        });
 
-        console.log(`New round created: ${currentRound.roundNumber} at ${new Date().toLocaleTimeString()}`);
-        console.log(`Active connections: ${global.activeConnections}`);
+        // Start multiplier updates
+        let currentMultiplier = 1;
+        const multiplierInterval = setInterval(() => {
+            currentMultiplier += 0.01;
+            io.emit('multiplierUpdate', { multiplier: currentMultiplier });
+
+            if (currentMultiplier >= crashMultiplier) {
+                clearInterval(multiplierInterval);
+                endRound(io);
+            }
+        }, 100);
 
         return currentRound;
     } catch (error) {
-        console.error('Error in startNewRound:', error);
-        return null;
+        console.error('Error starting new round:', error);
+        throw error;
     }
 }
 
-async function endRound()
- {
-    if(!currentRound) return;
+async function endRound(io) {
+    if (!currentRound) return;
+
     currentRound.endTime = new Date();
     await currentRound.save();
-    console.log("Ending round:", currentRound);
-    console.log(`Round ended: ${currentRound.roundNumber} at ${new Date().toLocaleTimeString()}`);
+
+    io.emit('roundEnd', {
+        roundNumber: currentRound.roundNumber,
+        crashPoint: currentRound.crashMultiplier
+    });
+
     currentRound = null;
-};
+}
 
 // Function to start the round interval (every 10 seconds)
 function startRoundInterval() {
