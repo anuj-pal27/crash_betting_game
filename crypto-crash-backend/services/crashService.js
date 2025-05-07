@@ -192,21 +192,52 @@ async function stopRoundInterval() {
     }
 }
 
-async function addPlayerBet (playerId, amountUSD, amountCrypto, currency){
-    currentRound = await getCurrentRound(); // Ensure currentRound is always active
-    console.log("Adding player bet to current round:", currentRound);
-    const existing = currentRound.bets.find(bet => bet.playerId.toString() === playerId.toString());
-    if(existing) throw new Error('Player already placed a bet in this round');
+async function addPlayerBet(playerId, amountUSD, amountCrypto, currency) {
+    try {
+        currentRound = await getCurrentRound();
+        console.log("Adding player bet to current round:", currentRound);
 
-    currentRound.bets.push({
-        playerId,
-        amountUSD,
-        amountCrypto,
-        cashoutMultiplier:null,
-        currency,
-    });
-    await currentRound.save();
-    return currentRound;
+        // Check if round is active
+        if (!currentRound || currentRound.status !== 'active') {
+            throw new Error('No active round available for betting');
+        }
+
+        // Check if player already has a bet in this round
+        const existingBet = currentRound.bets.find(
+            bet => bet.playerId.toString() === playerId.toString()
+        );
+
+        if (existingBet) {
+            return {
+                success: false,
+                error: 'Player already placed a bet in this round'
+            };
+        }
+
+        // Add the new bet
+        const newBet = {
+            playerId,
+            amountUSD,
+            amountCrypto,
+            currency,
+            cashoutMultiplier: null,
+            cashedOut: false,
+            payout: null
+        };
+
+        currentRound.bets.push(newBet);
+        currentRound.totalBetsUSD += amountUSD;
+        await currentRound.save();
+
+        return {
+            success: true,
+            round: currentRound,
+            bet: newBet
+        };
+    } catch (error) {
+        console.error('Error adding player bet:', error);
+        throw error;
+    }
 }
 
 async function cashOutPlayer(playerId, cashoutMultiplier) {

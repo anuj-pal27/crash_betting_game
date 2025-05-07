@@ -54,12 +54,18 @@ exports.placeBet = async (req, res) => {
         session.startTransaction();
 
         try {
+            // Add bet to current round first
+            const betResult = await crashService.addPlayerBet(playerId, usdAmount, cryptoAmount, currency);
+            
+            if (!betResult.success) {
+                await session.abortTransaction();
+                return res.status(400).json({ error: betResult.error });
+            }
+
             // Deduct from player's wallet
             player.wallet[currency] -= cryptoAmount;
+            player.stats.totalBets += 1;
             await player.save({ session });
-
-            // Add bet to current round
-            const round = await crashService.addPlayerBet(playerId, usdAmount, cryptoAmount, currency);
 
             // Create transaction record
             const transaction = new Transaction({
@@ -68,9 +74,10 @@ exports.placeBet = async (req, res) => {
                 amountCrypto: cryptoAmount,
                 currency,
                 transactionType: "bet",
-                roundNumber: round.roundNumber,
+                roundNumber: betResult.round.roundNumber,
                 multiplier: null,
-                result: null
+                result: null,
+                gameRoundId: betResult.round._id
             });
 
             await transaction.save({ session });
@@ -79,7 +86,7 @@ exports.placeBet = async (req, res) => {
             res.json({ 
                 success: true, 
                 transaction, 
-                round,
+                round: betResult.round,
                 wallet: player.wallet,
                 priceUsed: price
             });
