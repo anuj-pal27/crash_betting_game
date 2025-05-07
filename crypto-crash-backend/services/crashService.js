@@ -62,15 +62,24 @@ async function startNewRound(io) {
             return startNewRound(io); // Recursively try the next number
         }
 
+        // Generate server seed and hash it
         const serverSeed = crypto.randomBytes(32).toString('hex');
+        const hashedSeed = crypto.createHash('sha256')
+            .update(serverSeed)
+            .digest('hex');
+            
         const crashMultiplier = generateCrashPoint(serverSeed, roundNumber);
 
         currentRound = new GameRound({
             roundNumber,
             crashMultiplier,
             serverSeed,
+            hashedSeed, // Add the hashed seed
             startTime: new Date(),
-            bets: []
+            status: 'active',
+            bets: [],
+            totalBetsUSD: 0,
+            totalPayoutUSD: 0
         });
 
         await currentRound.save();
@@ -78,7 +87,8 @@ async function startNewRound(io) {
         // Notify all clients about new round
         io.emit('roundStart', {
             roundNumber,
-            startTime: currentRound.startTime
+            startTime: currentRound.startTime,
+            hashedSeed // Include hashed seed in event for verification
         });
 
         console.log(`New round ${roundNumber} started with multiplier ${crashMultiplier}`);
@@ -86,6 +96,11 @@ async function startNewRound(io) {
         // Start multiplier updates
         let currentMultiplier = 1;
         const multiplierInterval = setInterval(() => {
+            if (!currentRound || currentRound.status !== 'active') {
+                clearInterval(multiplierInterval);
+                return;
+            }
+
             currentMultiplier += 0.01;
             io.emit('multiplierUpdate', { 
                 multiplier: currentMultiplier,
@@ -94,6 +109,7 @@ async function startNewRound(io) {
 
             if (currentMultiplier >= crashMultiplier) {
                 clearInterval(multiplierInterval);
+                currentRound.status = 'crashed';
                 endRound(io);
             }
         }, 100);
@@ -108,15 +124,23 @@ async function startNewRound(io) {
 async function endRound(io) {
     if (!currentRound) return;
 
-    currentRound.endTime = new Date();
-    await currentRound.save();
+    try {
+        currentRound.endTime = new Date();
+        currentRound.status = 'completed';
+        await currentRound.save();
 
-    io.emit('roundEnd', {
-        roundNumber: currentRound.roundNumber,
-        crashPoint: currentRound.crashMultiplier
-    });
+        io.emit('roundEnd', {
+            roundNumber: currentRound.roundNumber,
+            crashPoint: currentRound.crashMultiplier,
+            serverSeed: currentRound.serverSeed, // Reveal server seed after round ends
+            hashedSeed: currentRound.hashedSeed
+        });
 
-    currentRound = null;
+        currentRound = null;
+    } catch (error) {
+        console.error('Error ending round:', error);
+        throw error;
+    }
 }
 
 // Function to start the round interval (every 10 seconds)
