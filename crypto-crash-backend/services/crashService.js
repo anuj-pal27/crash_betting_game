@@ -8,6 +8,8 @@ let currentRound = null;
 const roundIntervalDuration = 10000; // 10 seconds (set this to your preferred round duration)
 let roundInterval = null;
 
+// Add timeout handling for round operations
+const ROUND_TIMEOUT = 10000; // 10 seconds
 
 async function getCurrentRound() {
     if (currentRound) return currentRound;
@@ -33,29 +35,39 @@ async function startNewRound(roundNumber = null) {
             return null;
         }
 
+        // Add validation for crash multiplier
+        const crashMultiplier = generateCrashPoint();
+        if (crashMultiplier <= 1) {
+            console.error('Invalid crash multiplier generated:', crashMultiplier);
+            return null;
+        }
+
+        // Add validation for round number
         if (!roundNumber) {
             const lastRound = await GameRound.findOne().sort({ roundNumber: -1 });
             roundNumber = lastRound ? lastRound.roundNumber + 1 : 1;
         }
-        const crashMultiplier = generateCrashPoint();
 
         currentRound = new GameRound({
             roundNumber,
-            crashMultiplier: crashMultiplier,
+            crashMultiplier,
             serverSeed: crypto.randomBytes(32).toString('hex'),
-            startTime: new Date(), // Add start time for tracking
+            startTime: new Date(),
             bets: [],
-        })
-        console.log("currentRound",currentRound);
-        await currentRound.save();
-        // Clear any existing interval
-        if (roundInterval) clearInterval(roundInterval);
+        });
 
-        // Start the interval to end the round automatically after 10 seconds
+        await currentRound.save();
+
+        // Use Promise.race with timeout
+        if (roundInterval) clearInterval(roundInterval);
         roundInterval = setTimeout(async () => {
-            await endRound();
-            await startNewRound();
-        }, 10000); // 10 seconds
+            try {
+                await endRound();
+                await startNewRound();
+            } catch (error) {
+                console.error('Error in round interval:', error);
+            }
+        }, ROUND_TIMEOUT);
 
         console.log(`New round created: ${currentRound.roundNumber} at ${new Date().toLocaleTimeString()}`);
         console.log(`Active connections: ${global.activeConnections}`);
@@ -144,42 +156,50 @@ async function addPlayerBet (playerId, amountUSD, amountCrypto, currency){
 }
 
 async function cashOutPlayer(playerId, cashoutMultiplier) {
-    currentRound = await getCurrentRound(); // Ensure currentRound is always active
-    if (!currentRound) return { success: false, error: "No active round found" };
-    
-    const playerBet = currentRound.bets.find(bet => bet.playerId.toString() === playerId.toString());
-    console.log("playerBet-->", playerBet);
-    
-    if (!playerBet) return { success: false, error: "Player has not placed a bet" };
+    try {
+        currentRound = await getCurrentRound();
+        if (!currentRound) {
+            return { success: false, error: "No active round found" };
+        }
+        
+        const playerBet = currentRound.bets.find(bet => 
+            bet.playerId.toString() === playerId.toString()
+        );
+        
+        if (!playerBet) {
+            return { success: false, error: "Player has not placed a bet" };
+        }
 
-    if (playerBet.cashedOut) {
-        return { success: false, error: "Player already cashed out for this bet." };
+        if (playerBet.cashedOut) {
+            return { success: false, error: "Player already cashed out for this bet" };
+        }
+        
+        // Add validation for cashout multiplier
+        if (cashoutMultiplier <= 1) {
+            return { success: false, error: "Invalid cashout multiplier" };
+        }
+        
+        if (cashoutMultiplier > currentRound.crashMultiplier) {
+            return { success: false, error: "Cashout multiplier exceeds crash multiplier" };
+        }
+        
+        playerBet.cashoutMultiplier = cashoutMultiplier;
+        playerBet.cashedOut = true;
+        await currentRound.save();
+
+        const earnedCrypto = playerBet.amountCrypto * cashoutMultiplier;
+
+        return {
+            success: true,
+            bet: playerBet,
+            earnedCrypto,
+            currency: playerBet.currency,
+        };
+    } catch (error) {
+        console.error('Error in cashOutPlayer:', error);
+        return { success: false, error: "Internal server error" };
     }
-    
-    console.log("cashoutMultiplier-->", cashoutMultiplier);
-    if (cashoutMultiplier > currentRound.crashMultiplier) {
-        return { success: false, error: "Cashout multiplier exceeds crash multiplier." };
-    }
-    
-    // Set cashout details
-    playerBet.cashoutMultiplier = cashoutMultiplier;
-    playerBet.cashedOut = true;
-
-    // Save the current round with updated bet
-    await currentRound.save();
-
-    const earnedCrypto = playerBet.amountCrypto * cashoutMultiplier;
-    console.log("earnedCrypto", earnedCrypto);
-
-    return {
-        success: true,
-        bet: playerBet,
-        earnedCrypto: earnedCrypto,
-        currency: playerBet.currency,
-    };
 }
-
-
 
 // Exporting all functions properly
 module.exports = {

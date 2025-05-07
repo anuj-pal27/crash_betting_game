@@ -15,13 +15,20 @@ const io = socketIo(server, { cors: { origin: '*' } }); // Initialize WebSocket 
 
 app.use(cors());
 app.use(express.json());
-connectDB().then(() => {
-    if (mongoose.connection.readyState === 1) {
-        console.log('MongoDB connected successfully');
-    } else {
-        console.error('Failed to connect to MongoDB');
-    }
-});
+
+// Connect to MongoDB
+connectDB()
+    .then(() => {
+        if (mongoose.connection.readyState === 1) {
+            console.log('MongoDB connected successfully');
+        } else {
+            console.error('Failed to connect to MongoDB');
+        }
+    })
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+        process.exit(1);
+    });
 
 const PORT = process.env.PORT || 5000;
 

@@ -3,6 +3,7 @@ const Transaction = require("../models/Transaction");
 const Player = require("../models/Player");
 const crashService = require("../services/crashService");
 const priceService = require("../services/priceService");
+const mongoose = require('mongoose');
 
 exports.placeBet = async (req, res) => {
     try{
@@ -36,6 +37,7 @@ exports.placeBet = async (req, res) => {
         res.status(500).json({error:error.message});
     }
 };
+
 
 exports.cashOut = async (req, res) => {
     try{

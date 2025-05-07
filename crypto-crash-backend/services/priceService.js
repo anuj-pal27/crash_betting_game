@@ -11,6 +11,7 @@ const supportedCoins = {
 exports.getPrice = async (currency = 'BTC') => {
     try{
         const coinId = supportedCoins[currency.toUpperCase()];
+        console.log("coinId",coinId);
         if(!coinId){
             throw new Error('Unsupported coin');
         }
