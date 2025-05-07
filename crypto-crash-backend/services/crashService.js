@@ -40,9 +40,28 @@ async function getCurrentRound() {
     return currentRound;
 }
 
+async function getNextRoundNumber() {
+    try {
+        const lastRound = await GameRound.findOne().sort({ roundNumber: -1 });
+        return lastRound ? lastRound.roundNumber + 1 : 1;
+    } catch (error) {
+        console.error('Error getting next round number:', error);
+        throw error;
+    }
+}
+
 async function startNewRound(io) {
     try {
-        const roundNumber = currentRound ? currentRound.roundNumber + 1 : 1;
+        // Get the next round number
+        const roundNumber = await getNextRoundNumber();
+        
+        // Check if a round with this number already exists
+        const existingRound = await GameRound.findOne({ roundNumber });
+        if (existingRound) {
+            console.log(`Round ${roundNumber} already exists, getting next number`);
+            return startNewRound(io); // Recursively try the next number
+        }
+
         const serverSeed = crypto.randomBytes(32).toString('hex');
         const crashMultiplier = generateCrashPoint(serverSeed, roundNumber);
 
@@ -62,11 +81,16 @@ async function startNewRound(io) {
             startTime: currentRound.startTime
         });
 
+        console.log(`New round ${roundNumber} started with multiplier ${crashMultiplier}`);
+
         // Start multiplier updates
         let currentMultiplier = 1;
         const multiplierInterval = setInterval(() => {
             currentMultiplier += 0.01;
-            io.emit('multiplierUpdate', { multiplier: currentMultiplier });
+            io.emit('multiplierUpdate', { 
+                multiplier: currentMultiplier,
+                roundNumber 
+            });
 
             if (currentMultiplier >= crashMultiplier) {
                 clearInterval(multiplierInterval);
