@@ -2,6 +2,7 @@ const GameRound = require('../models/GameRound');
 const Player = require('../models/Player');
 const generateCrashPoint = require('../utils/fairCrash');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 
 let currentRound = null;
 const roundIntervalDuration = 10000; // 10 seconds (set this to your preferred round duration)
@@ -25,23 +26,28 @@ async function getCurrentRound() {
     return currentRound;
 }
 
-async function startNewRound (roundNumber=null)  {
+async function startNewRound(roundNumber = null) {
+    try {
+        if (!mongoose.connection.readyState === 1) {
+            console.error('MongoDB is not connected. Cannot start new round.');
+            return null;
+        }
 
-    if (!roundNumber) {
-        const lastRound = await GameRound.findOne().sort({ roundNumber: -1 });
-        roundNumber = lastRound ? lastRound.roundNumber + 1 : 1;
-      }
-    const crashMultiplier = generateCrashPoint();
+        if (!roundNumber) {
+            const lastRound = await GameRound.findOne().sort({ roundNumber: -1 });
+            roundNumber = lastRound ? lastRound.roundNumber + 1 : 1;
+        }
+        const crashMultiplier = generateCrashPoint();
 
-    currentRound = new GameRound({
-        roundNumber,
-        crashMultiplier: crashMultiplier,
-        serverSeed: crypto.randomBytes(32).toString('hex'),
-        startTime: new Date(), // Add start time for tracking
-        bets: [],
-    })
-    console.log("currentRound",currentRound);
-    await currentRound.save();
+        currentRound = new GameRound({
+            roundNumber,
+            crashMultiplier: crashMultiplier,
+            serverSeed: crypto.randomBytes(32).toString('hex'),
+            startTime: new Date(), // Add start time for tracking
+            bets: [],
+        })
+        console.log("currentRound",currentRound);
+        await currentRound.save();
         // Clear any existing interval
         if (roundInterval) clearInterval(roundInterval);
 
@@ -51,11 +57,15 @@ async function startNewRound (roundNumber=null)  {
             await startNewRound();
         }, 10000); // 10 seconds
 
-    console.log(`New round created: ${currentRound.roundNumber} at ${new Date().toLocaleTimeString()}`);
-    console.log(`Active connections: ${global.activeConnections}`);
+        console.log(`New round created: ${currentRound.roundNumber} at ${new Date().toLocaleTimeString()}`);
+        console.log(`Active connections: ${global.activeConnections}`);
 
-    return currentRound;
-};
+        return currentRound;
+    } catch (error) {
+        console.error('Error in startNewRound:', error);
+        return null;
+    }
+}
 
 async function endRound()
  {
@@ -70,12 +80,16 @@ async function endRound()
 // Function to start the round interval (every 10 seconds)
 function startRoundInterval() {
     if (roundInterval) {
-        clearInterval(roundInterval); // Clear any existing interval to avoid duplicates
+        clearInterval(roundInterval);
     }
 
     // Start first round immediately
-    startNewRound().then(() => {
-        console.log("Initial round started");
+    startNewRound().then((round) => {
+        if (round) {
+            console.log("Initial round started");
+        } else {
+            console.log("Failed to start initial round - check database connection");
+        }
     }).catch(err => {
         console.error("Error starting initial round:", err);
     });
@@ -83,11 +97,18 @@ function startRoundInterval() {
     // Start new interval
     roundInterval = setInterval(async () => {
         try {
+            if (mongoose.connection.readyState !== 1) {
+                console.error('MongoDB is not connected. Stopping round interval.');
+                stopRoundInterval();
+                return;
+            }
+            
             console.log("Starting a new round...");
-            await endRound(); // Make sure to end the previous round
+            await endRound();
             await startNewRound();
         } catch (err) {
             console.error("Error in round interval:", err);
+            stopRoundInterval();
         }
     }, roundIntervalDuration);
 

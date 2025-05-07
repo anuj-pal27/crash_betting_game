@@ -15,7 +15,13 @@ const io = socketIo(server, { cors: { origin: '*' } }); // Initialize WebSocket 
 
 app.use(cors());
 app.use(express.json());
-connectDB();
+connectDB().then(() => {
+    if (mongoose.connection.readyState === 1) {
+        console.log('MongoDB connected successfully');
+    } else {
+        console.error('Failed to connect to MongoDB');
+    }
+});
 
 const PORT = process.env.PORT || 5000;
 
@@ -35,9 +41,13 @@ io.on('connection', (socket) => {
   console.log('A user connected');
   activeConnections++;
   
-  // Start the round interval if this is the first connection
-  if (activeConnections === 1) {
-    crashService.startRoundInterval();
+  // Only start round interval if database is connected
+  if (mongoose.connection.readyState === 1) {
+    if (activeConnections === 1) {
+      crashService.startRoundInterval();
+    }
+  } else {
+    console.error('Cannot start rounds - database not connected');
   }
 
   // Notify clients about round start
