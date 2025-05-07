@@ -18,6 +18,10 @@ exports.topUpWallet = async (req, res) => {
 
     if (!player) return res.status(404).json({ error: 'Player not found' });
 
+    // Initialize wallet if not exists
+    if (!player.wallet) player.wallet = {};
+
+    // Add funds to specified currency
     player.wallet[currency] = (player.wallet[currency] || 0) + amount;
     await player.save();
 

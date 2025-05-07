@@ -3,7 +3,7 @@ const Transaction = require("../models/Transaction");
 const Player = require("../models/Player");
 const crashService = require("../services/crashService");
 const priceService = require("../services/priceService");
-let maxprice = null
+
 exports.placeBet = async (req, res) => {
     try{
         const {playerId} = req.params;
@@ -11,7 +11,7 @@ exports.placeBet = async (req, res) => {
         const player = await Player.findById(playerId);
         if(!player) return res.status(404).json({error:"Player not found"});
         const price = await priceService.getPrice(currency);
-        maxprice = price;
+
         const cryptoAmount = usdAmount / price;
         console.log("cryptoAmount",cryptoAmount);
         if(!player.wallet[currency]<cryptoAmount) return res.status(400).json({error:"Insufficient funds"});

@@ -50,6 +50,10 @@ async function startNewRound (roundNumber=null)  {
             await endRound();
             await startNewRound();
         }, 10000); // 10 seconds
+
+    console.log(`New round created: ${currentRound.roundNumber} at ${new Date().toLocaleTimeString()}`);
+    console.log(`Active connections: ${global.activeConnections}`);
+
     return currentRound;
 };
 
@@ -59,6 +63,7 @@ async function endRound()
     currentRound.endTime = new Date();
     await currentRound.save();
     console.log("Ending round:", currentRound);
+    console.log(`Round ended: ${currentRound.roundNumber} at ${new Date().toLocaleTimeString()}`);
     currentRound = null;
 };
 
@@ -68,21 +73,35 @@ function startRoundInterval() {
         clearInterval(roundInterval); // Clear any existing interval to avoid duplicates
     }
 
+    // Start first round immediately
+    startNewRound().then(() => {
+        console.log("Initial round started");
+    }).catch(err => {
+        console.error("Error starting initial round:", err);
+    });
+
     // Start new interval
     roundInterval = setInterval(async () => {
-        console.log("Starting a new round...");
-        await startNewRound();
+        try {
+            console.log("Starting a new round...");
+            await endRound(); // Make sure to end the previous round
+            await startNewRound();
+        } catch (err) {
+            console.error("Error in round interval:", err);
+        }
     }, roundIntervalDuration);
 
     console.log("Round interval started, new round every 10 seconds.");
 }
 
 // Function to manually stop the round interval
-function stopRoundInterval() {
+async function stopRoundInterval() {
     if (roundInterval) {
         clearInterval(roundInterval);
         roundInterval = null;
-        console.log("Round interval stopped.");
+        // End the current round when stopping
+        await endRound();
+        console.log("Round interval stopped and current round ended.");
     }
 }
 
