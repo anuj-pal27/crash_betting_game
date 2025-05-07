@@ -14,6 +14,11 @@ const transactionSchema = new mongoose.Schema({
         type: Number,
         required: true,
     },
+    currency: {
+        type: String,
+        enum: ['BTC', 'ETH', 'SOL', 'USDT'],
+        required: true
+    },
     transactionType:{
         type: String,
         enum: ['bet', 'cashout'],
@@ -21,6 +26,7 @@ const transactionSchema = new mongoose.Schema({
     },
     roundNumber:{
         type:Number,
+        required: true
     },
     multiplier:{
         type: Number,
@@ -31,11 +37,13 @@ const transactionSchema = new mongoose.Schema({
     },
     result:{
         type: String,
-        enum: ['win', 'lose'],
+        enum: ['win', 'lose', null],
+        default: null
     },
     gameRoundId:{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'GameRound',
+        required: true
     },
 });
 

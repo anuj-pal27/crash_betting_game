@@ -14,16 +14,23 @@ const BetSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
-  cashoutMultiplier: {
-    type: Number,
-  },
   currency: {
     type: String,
+    enum: ['BTC', 'ETH', 'SOL', 'USDT'],
+    required: true
+  },
+  cashoutMultiplier: {
+    type: Number,
+    default: null
   },
   cashedOut: {
     type: Boolean,
     default: false,
   },
+  payout: {
+    type: Number,
+    default: null
+  }
 });
 
 const gameRoundSchema = new mongoose.Schema({
@@ -43,14 +50,29 @@ const gameRoundSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  status: {
+    type: String,
+    enum: ['active', 'crashed', 'completed'],
+    default: 'active'
+  },
   bets: [BetSchema],
 
   serverSeed: {
     type: String,
+    required: true
   },
   hashedSeed: {
     type: String,
+    required: true
   },
+  totalBetsUSD: {
+    type: Number,
+    default: 0
+  },
+  totalPayoutUSD: {
+    type: Number,
+    default: 0
+  }
 });
 
 module.exports = mongoose.model("GameRound", gameRoundSchema);

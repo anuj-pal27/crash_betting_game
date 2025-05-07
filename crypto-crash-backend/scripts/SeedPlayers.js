@@ -15,29 +15,49 @@ const seedPlayers = async () => {
             {
                 name: 'alice',
                 wallet: {
-                    crypto: 0.005,
-                    usd: 30
+                    BTC: 1.0,    // 1 Bitcoin
+                    ETH: 10.0,   // 10 Ethereum
+                    SOL: 100.0,  // 100 Solana
+                    USDT: 10000  // 10,000 USDT
+                },
+                stats: {
+                    totalBets: 0,
+                    totalWins: 0,
+                    totalLosses: 0,
+                    biggestWin: 0,
+                    biggestMultiplier: 0
                 }
             },
             {
                 name: 'bob',
                 wallet: {
-                    crypto: 0.01,
-                    usd: 500
+                    BTC: 2.0,
+                    ETH: 20.0,
+                    SOL: 200.0,
+                    USDT: 20000
+                },
+                stats: {
+                    totalBets: 0,
+                    totalWins: 0,
+                    totalLosses: 0,
+                    biggestWin: 0,
+                    biggestMultiplier: 0
                 }
             },
             {
                 name: 'charlie',
                 wallet: {
-                    crypto: 0.02,
-                    usd: 1000
-                }
-            },
-            {
-                name: 'dave',
-                wallet: {
-                    crypto: 0.03,
-                    usd: 1500
+                    BTC: 3.0,
+                    ETH: 30.0,
+                    SOL: 300.0,
+                    USDT: 30000
+                },
+                stats: {
+                    totalBets: 0,
+                    totalWins: 0,
+                    totalLosses: 0,
+                    biggestWin: 0,
+                    biggestMultiplier: 0
                 }
             }
         ];
@@ -51,12 +71,13 @@ const seedPlayers = async () => {
 
     } catch (err) {
         console.error('Error seeding players:', err);
+        process.exit(1);
     } finally {
         await mongoose.connection.close();
         console.log('Database connection closed');
         process.exit(0);
     }
-}
+};
 
 // Run the seed function
 seedPlayers();

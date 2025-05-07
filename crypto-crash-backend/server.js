@@ -52,13 +52,10 @@ io.on('connection', (socket) => {
   console.log('Client connected');
   activeConnections++;
   
-  // Only start round interval if database is connected
-  if (mongoose.connection.readyState === 1) {
-    if (activeConnections === 1) {
-      crashService.startRoundInterval();
-    }
-  } else {
-    console.error('Cannot start rounds - database not connected');
+  // Only start round interval if this is the first connection
+  if (activeConnections === 1) {
+    console.log('First client connected, starting game rounds');
+    startGameLoop();
   }
 
   // Send current game state
@@ -116,9 +113,13 @@ io.on('connection', (socket) => {
     console.log('Client disconnected');
     activeConnections--;
     
-    // Stop the round interval if no users are connected
+    // Stop the game loop if no clients are connected
     if (activeConnections === 0) {
-      crashService.stopRoundInterval();
+      console.log('No clients connected, stopping game rounds');
+      if (roundInterval) {
+        clearInterval(roundInterval);
+        roundInterval = null;
+      }
     }
   });
 });
@@ -133,8 +134,6 @@ function startGameLoop() {
     await crashService.startNewRound(io);
   }, ROUND_DURATION);
 }
-
-startGameLoop();
 
 // Start the server
 server.listen(PORT, () => {
