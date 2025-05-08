@@ -68,7 +68,8 @@ async function startNewRound(io) {
             await startNewRound();
         }, 10000); // 10 seconds
     return currentRound;
-};
+} catch(err){console.log(err)}}
+
 
 async function endRound()
  {
