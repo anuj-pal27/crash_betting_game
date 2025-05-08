@@ -3,17 +3,14 @@ const express = require('express');
 const mongoose = require('mongoose');
 const connectDB = require('./db/config');
 const cors = require('cors');
-const http = require('http');
-const socketIo = require('socket.io');
+// server.js or main file
 const crashService = require('./services/crashService');
+crashService.startRoundInterval();
 const gameRoutes = require('./routes/gameRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const gameController = require('./controllers/gameController');
 
 const app = express();
-const server = http.createServer(app); // Create an HTTP server from the app
-const io = socketIo(server, { cors: { origin: '*' } }); // Initialize WebSocket (Socket.io)
-
 app.use(cors());
 app.use(express.json());
 
@@ -33,109 +30,14 @@ connectDB()
 
 const PORT = process.env.PORT || 5000;
 
-// Set up game and wallet routes
-app.use("/api/game", gameRoutes);
-app.use("/api/wallet", walletRoutes);
+app.use("/api/game",gameRoutes);
+app.use("/api/wallet",walletRoutes);
 
-// Default route
-app.get("/", (req, res) => {
-  res.send("Crypto Crash Game Backend is running");
-});
-
-let activeConnections = 0;
-let currentRound = null;
-let roundInterval = null;
-const ROUND_DURATION = 10000; // 10 seconds
-
-// WebSocket handling for real-time updates
-io.on('connection', (socket) => {
-  console.log('Client connected');
-  activeConnections++;
-  
-  // Only start round interval if this is the first connection
-  if (activeConnections === 1) {
-    console.log('First client connected, starting game rounds');
-    startGameLoop();
-  }
-
-  // Send current game state
-  if (currentRound) {
-    socket.emit('gameState', {
-      roundNumber: currentRound.roundNumber,
-      startTime: currentRound.startTime,
-      currentMultiplier: getCurrentMultiplier()
-    });
-  }
-
-  socket.on('placeBet', async (data) => {
-    try {
-      const { playerId, usdAmount, currency } = data;
-      const result = await gameController.placeBet({
-        params: { playerId },
-        body: { usdAmount, currency }
-      });
-      
-      io.emit('newBet', {
-        playerId,
-        usdAmount,
-        currency,
-        roundNumber: currentRound.roundNumber
-      });
-      
-      socket.emit('betResult', result);
-    } catch (error) {
-      socket.emit('error', { message: error.message });
-    }
-  });
-
-  socket.on('cashOut', async (data) => {
-    try {
-      const { playerId, multiplier } = data;
-      const result = await gameController.cashOut({
-        params: { playerId },
-        body: { cashoutMultiplier: multiplier }
-      });
-      
-      io.emit('playerCashout', {
-        playerId,
-        multiplier,
-        payout: result.transaction.amountUSD
-      });
-      
-      socket.emit('cashoutResult', result);
-    } catch (error) {
-      socket.emit('error', { message: error.message });
-    }
-  });
-
-  // Listen for disconnect event
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
-    activeConnections--;
-    
-    // Stop the game loop if no clients are connected
-    if (activeConnections === 0) {
-      console.log('No clients connected, stopping game rounds');
-      if (roundInterval) {
-        clearInterval(roundInterval);
-        roundInterval = null;
-      }
-    }
-  });
-});
-
-// Start the game loop
-function startGameLoop() {
-  if (roundInterval) {
-    clearInterval(roundInterval);
-  }
-  
-  roundInterval = setInterval(async () => {
-    await crashService.startNewRound(io);
-  }, ROUND_DURATION);
+app.get("/",(req,res)=>{
+    res.send("Crypto Crash Game Backend is running");
+})
+connectDB();
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 }
-
-// Start the server
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+);

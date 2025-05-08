@@ -62,86 +62,22 @@ async function startNewRound(io) {
             return startNewRound(io); // Recursively try the next number
         }
 
-        // Generate server seed and hash it
-        const serverSeed = crypto.randomBytes(32).toString('hex');
-        const hashedSeed = crypto.createHash('sha256')
-            .update(serverSeed)
-            .digest('hex');
-            
-        const crashMultiplier = generateCrashPoint(serverSeed, roundNumber);
+        // Start the interval to end the round automatically after 10 seconds
+        roundInterval = setTimeout(async () => {
+            await endRound();
+            await startNewRound();
+        }, 10000); // 10 seconds
+    return currentRound;
+};
 
-        currentRound = new GameRound({
-            roundNumber,
-            crashMultiplier,
-            serverSeed,
-            hashedSeed, // Add the hashed seed
-            startTime: new Date(),
-            status: 'active',
-            bets: [],
-            totalBetsUSD: 0,
-            totalPayoutUSD: 0
-        });
-
-        await currentRound.save();
-
-        // Notify all clients about new round
-        io.emit('roundStart', {
-            roundNumber,
-            startTime: currentRound.startTime,
-            hashedSeed // Include hashed seed in event for verification
-        });
-
-        console.log(`New round ${roundNumber} started with multiplier ${crashMultiplier}`);
-
-        // Start multiplier updates
-        let currentMultiplier = 1;
-        const multiplierInterval = setInterval(() => {
-            if (!currentRound || currentRound.status !== 'active') {
-                clearInterval(multiplierInterval);
-                return;
-            }
-
-            currentMultiplier += 0.01;
-            io.emit('multiplierUpdate', { 
-                multiplier: currentMultiplier,
-                roundNumber 
-            });
-
-            if (currentMultiplier >= crashMultiplier) {
-                clearInterval(multiplierInterval);
-                currentRound.status = 'crashed';
-                endRound(io);
-            }
-        }, 100);
-
-        return currentRound;
-    } catch (error) {
-        console.error('Error starting new round:', error);
-        throw error;
-    }
-}
-
-async function endRound(io) {
-    if (!currentRound) return;
-
-    try {
-        currentRound.endTime = new Date();
-        currentRound.status = 'completed';
-        await currentRound.save();
-
-        io.emit('roundEnd', {
-            roundNumber: currentRound.roundNumber,
-            crashPoint: currentRound.crashMultiplier,
-            serverSeed: currentRound.serverSeed, // Reveal server seed after round ends
-            hashedSeed: currentRound.hashedSeed
-        });
-
-        currentRound = null;
-    } catch (error) {
-        console.error('Error ending round:', error);
-        throw error;
-    }
-}
+async function endRound()
+ {
+    if(!currentRound) return;
+    currentRound.endTime = new Date();
+    await currentRound.save();
+    console.log("Ending round:", currentRound);
+    currentRound = null;
+};
 
 // Function to start the round interval (every 10 seconds)
 function startRoundInterval() {
@@ -149,46 +85,21 @@ function startRoundInterval() {
         clearInterval(roundInterval);
     }
 
-    // Start first round immediately
-    startNewRound().then((round) => {
-        if (round) {
-            console.log("Initial round started");
-        } else {
-            console.log("Failed to start initial round - check database connection");
-        }
-    }).catch(err => {
-        console.error("Error starting initial round:", err);
-    });
-
     // Start new interval
     roundInterval = setInterval(async () => {
-        try {
-            if (mongoose.connection.readyState !== 1) {
-                console.error('MongoDB is not connected. Stopping round interval.');
-                stopRoundInterval();
-                return;
-            }
-            
-            console.log("Starting a new round...");
-            await endRound();
-            await startNewRound();
-        } catch (err) {
-            console.error("Error in round interval:", err);
-            stopRoundInterval();
-        }
+        console.log("Starting a new round...");
+        await startNewRound();
     }, roundIntervalDuration);
 
     console.log("Round interval started, new round every 10 seconds.");
 }
 
 // Function to manually stop the round interval
-async function stopRoundInterval() {
+function stopRoundInterval() {
     if (roundInterval) {
         clearInterval(roundInterval);
         roundInterval = null;
-        // End the current round when stopping
-        await endRound();
-        console.log("Round interval stopped and current round ended.");
+        console.log("Round interval stopped.");
     }
 }
 

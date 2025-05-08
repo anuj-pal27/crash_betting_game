@@ -3,8 +3,7 @@ const Transaction = require("../models/Transaction");
 const Player = require("../models/Player");
 const crashService = require("../services/crashService");
 const priceService = require("../services/priceService");
-const mongoose = require('mongoose');
-
+let maxprice = null
 exports.placeBet = async (req, res) => {
     try {
         const { playerId } = req.params;
@@ -26,16 +25,7 @@ exports.placeBet = async (req, res) => {
 
         // Get price with better error handling
         const price = await priceService.getPrice(currency);
-        console.log(`Using price for ${currency}: ${price}`);
-
-        if (!price || price <= 0) {
-            return res.status(400).json({ 
-                error: "Invalid price received",
-                currency,
-                price
-            });
-        }
-
+        maxprice = price;
         const cryptoAmount = usdAmount / price;
         console.log(`Converting ${usdAmount} USD to ${cryptoAmount} ${currency}`);
 

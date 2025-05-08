@@ -15,8 +15,6 @@
     "crypto": "^1.0.1",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "http": "^0.0.1-security",
-    "mongoose": "^8.14.1",
-    "socket.io": "^4.8.1"
+    "mongoose": "^8.14.1"
   }
 }
